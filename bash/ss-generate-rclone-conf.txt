@@ -1,0 +1,147 @@
+#!/bin/bash
+
+####################################################################################################
+#### author: SlickStack ############################################################################
+#### link: https://slickstack.io ###################################################################
+#### mirror: littlebizzy/slickstack/blob/master/bash/ss-generate-rclone-conf.txt ###################
+#### path: /var/www/ss-generate-rclone-conf ########################################################
+#### Usage: ./ss-generate-rclone-config --options "key1=value1,key2=value2" ########################
+#### destination: n/a (not a boilerplate) ##########################################################
+#### purpose: Dynamically generate rclone.conf with a list of options ##############################
+#### module version: Ubuntu 24.04 LTS ##############################################################
+#### sourced by: n/a ###############################################################################
+#### bash aliases: n/a #############################################################################
+####################################################################################################
+
+####################################################################################################
+#### TABLE OF CONTENTS (SS-Generate-Rclone-Conf) #################################################
+####################################################################################################
+
+## this is a brief summary of the different code snippets you will find in this script ##
+## each section should be commented so you understand what is being accomplished ##
+
+## A. Source SS-Functions
+## B. Touch Timestamp File
+## C. Message (Begin Script)
+## D. Parse and Validate input arguments
+## E. Parse the options string into key-value pairs
+## F. Generate rclone.conf file
+## G. Message (Display Success Message)
+
+####################################################################################################
+#### A. SS-Generate-Rclone-Conf: Source SS-Config + SS-Functions #################################
+####################################################################################################
+
+## before anything else we must source the critical variables that power this script ##
+## ss-config is setup during ss-install wizard but ss-functions is hardcoded ##
+
+## source ss-functions ##
+source /var/www/ss-functions
+
+## BELOW THIS RELIES ON SS-FUNCTIONS
+
+####################################################################################################
+#### B. SS-Generate-Rclone-Conf: Touch Timestamp File ###############################################
+####################################################################################################
+
+## this is a dummy timestamp file that will remember the last time this script was run ##
+## it can be useful for developer reference and is sometimes used by SlickStack ##
+
+## ss_touch "${TIMESTAMP_SS_GENERATE_RCLONE_CONF}" ##
+
+####################################################################################################
+#### C. SS-Generate-Rclone-Conf: Message (Begin Script) #############################################
+####################################################################################################
+
+## this is a simple message that announces to the shell the purpose of this bash script ##
+## it will only be seen by sudo users who manually run this script in the shell ##
+
+ss_echo "${COLOR_INFO}Running ss-generate-rclone-conf... ${COLOR_RESET}"
+
+####################################################################################################
+#### D. SS-Generate-Rclone-Conf: Parse and Validate input arguments ################################
+####################################################################################################
+
+# Paths
+CONFIG_FILE="/var/www/meta/rclone.conf"
+TEMPLATE_FILE="/var/www/rclone-template.conf"
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --options) RCLONE_OPTIONS="$2"; shift ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+if [[ -z "$RCLONE_OPTIONS" ]]; then
+    echo "Error: Missing required options."
+    echo "Usage: ./generate-rclone-config.sh --options \"key1=value1,key2=value2\""
+    exit 1
+fi
+
+####################################################################################################
+#### E. SS-Generate-Rclone-Conf: Parse the options string into key-value pairs #####################
+####################################################################################################
+
+declare -A options
+IFS=',' read -ra pairs <<< "$RCLONE_OPTIONS"
+for pair in "${pairs[@]}"; do
+    IFS='=' read -r key value <<< "$pair"
+    options[$key]=$value
+done
+
+####################################################################################################
+#### F. SS-Generate-Rclone-Conf: Generate rclone.conf file #########################################
+####################################################################################################
+
+OPTIONS_TEXT=""
+for key in "${!options[@]}"; do
+    OPTIONS_TEXT+="$key = ${options[$key]}\n"
+done
+
+# Check if the template file exists
+if [[ ! -f "$TEMPLATE_FILE" ]]; then
+    echo "Error: Template file not found at $TEMPLATE_FILE"
+    exit 1
+fi
+
+# Replace the placeholder in the template and create the final config file
+sed "s|## OPTIONS_PLACEHOLDER ##|$OPTIONS_TEXT|" "$TEMPLATE_FILE" > "$CONFIG_FILE"
+
+####################################################################################################
+#### G. SS-Generate-Rclone-Conf: Message (Display Success Message) #################################
+####################################################################################################
+
+if [[ $? -eq 0 ]]; then
+    echo "Rclone configuration file generated successfully at $CONFIG_FILE."
+else
+    echo "Error: Failed to generate rclone configuration file."
+    exit 1
+fi
+
+####################################################################################################
+#### SlickStack: Reset Permissions (SlickStack Scripts) ############################################
+####################################################################################################
+
+## we include this permissions reset in all cron jobs and bash scripts for redundancy ##
+## chmod 0700 means only the root/sudo users can execute any SlickStack scripts ##
+
+## THIS SNIPPET DOES NOT RELY ON SS-CONFIG OR SS-FUNCTIONS
+## SNIPPET: ss bash scripts, ss cron jobs
+## UPDATED: 02JUL2022
+
+chown root:root /var/www/ss* ## must be root:root
+chown root:root /var/www/crons/*cron* ## must be root:root
+chown root:root /var/www/crons/custom/*cron* ## must be root:root
+chmod 0700 /var/www/ss* ## 0700 means only root/sudo can execute
+chmod 0700 /var/www/crons/*cron* ## 0700 means only root/sudo can execute
+chmod 0700 /var/www/crons/custom/*cron* ## 0700 means only root/sudo can execute
+
+####################################################################################################
+#### SlickStack: External References Used To Improve This Script ###################################
+####################################################################################################
+
+## Ref: https://github.com/littlebizzy/slickstack/blob/master/bash/ss-reset-password-sftp.txt
+
+## SS_EOF

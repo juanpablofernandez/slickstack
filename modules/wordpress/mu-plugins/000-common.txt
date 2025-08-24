@@ -748,17 +748,173 @@ render_opcache_tuner_content();
         
 	break;
 	
-	
-	case 'backups':
-	
-		echo '<br class="clear" />
-		<h2>Backup Settings</h2>
-		<p>Coming soon... powered by Rclone! Choose from Backblaze, Dropbox, Amazon S3, Google Drive, and more...</p>
-		<br class="clear" />
-		<h3>Recent Local Backups</h3>
-		<br class="clear" />';
+    case 'backups':
+
+    if (MULTISITE !== 'true') {
+
+        echo '<br class="clear" />
+        <h2>Backup Settings</h2>
+        <p>You can use the button below to initiate a remote backup of your SlickStack server. This will run the configured backup script (`ss-remote-backup`) to sync your server data to the configured remote cloud storage.</p>
+        <br class="clear" />
+
+        <form method="post" action="" style="display: inline;">';
+
+        // Output a nonce for form security
+        wp_nonce_field('configure_backup_action', 'configure_backup_nonce');
+
+        // Load backends from pre-generated JSON file
+        $backends_file = '/var/www/ss-rclone-config-options.json';
+        $backends_data = json_decode(file_get_contents($backends_file), true);
+
+        if ($backends_data) {
+            echo '<table class="form-table" role="presentation">';
+            
+            // Dropdown for selecting backend
+            echo '<tr>';
+            echo '<th scope="row"><label for="backend_select">Select Backend:</label></th>';
+            echo '<td>';
+            echo '<select name="backend" id="backend_select" onchange="renderBackendOptions(this.value)">';
+            echo '<option value="">-- Select a Backend --</option>';
+
+            // Populate dropdown with backend names
+            foreach ($backends_data as $backend_name => $backend_details) {
+                echo '<option value="' . esc_attr($backend_name) . '">' . esc_html($backend_name) . '</option>';
+            }
+            echo '</select>';
+            echo '</td>';
+            echo '</tr>';
+            
+            echo '</table>';
+
+            // Add space between the two tables
+            echo '<br class="clear" />';
+
+            // Placeholder for dynamic backend name
+            echo '<h2 id="backend_title">Select a Backend Options</h2>';
+
+            echo '<br class="clear" />';
+
+            // Second table for dynamic options
+            echo '<table class="form-table" role="presentation">';
+            echo '<tr><td colspan="2"><div id="backend_options"></div></td></tr>';
+            echo '</table>';
+            
+            // Submit button
+            echo '<br/><input type="submit" class="button button-primary" value="Save Configuration">';
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>Failed to load backend configurations. Please ensure the JSON file is accessible.</p></div>';
+        }
+
+        echo '</form>';
+        echo '</p>';
+
+        echo '
+        <script type="text/javascript">
+        function renderBackendOptions(backendName) {
+            var backendOptionsContainer = document.getElementById("backend_options");
+            var backendTitle = document.getElementById("backend_title");
+            backendOptionsContainer.innerHTML = ""; // Clear previous options
+
+            // If a backend is selected
+            if (backendName) {
+                var backendOptions = ' . json_encode($backends_data) . ';
+                var selectedBackend = backendOptions[backendName];
+
+                // Dynamically update the title with the backend name
+                backendTitle.textContent = selectedBackend ? selectedBackend.name + " Options" : "Select a Backend Options";
+
+                if (selectedBackend && selectedBackend.standard_options) {
+                    selectedBackend.standard_options.forEach(function(option) {
+                        // Create a table row for each option
+                        var row = document.createElement("tr");
+
+                        var labelCell = document.createElement("td");
+                        var inputCell = document.createElement("td");
+
+                        var label = document.createElement("label");
+                        label.setAttribute("for", option.name);
+                        label.textContent = option.description;
+
+                        var input = document.createElement("input");
+                        input.setAttribute("type", "text");
+                        input.setAttribute("name", option.name);
+                        input.setAttribute("id", option.name);
+                        input.setAttribute("value", ""); // You can modify this if you want to prefill values
+
+                        // Make the field required if specified in the JSON
+                        if (option.properties.required === "true") {
+                            input.setAttribute("required", "required");
+                        }
+
+                        labelCell.appendChild(label);
+                        inputCell.appendChild(input);
+                        row.appendChild(labelCell);
+                        row.appendChild(inputCell);
+                        
+                        // Append the row to the options container
+                        backendOptionsContainer.appendChild(row);
+                    });
+                }
+            } else {
+                backendTitle.textContent = "Select a Backend Options";  // Reset title when no backend is selected
+            }
+        }
+        </script>';
         
-	break;
+        echo '
+            <p>
+            <form method="post" action="" style="display: inline;">';
+
+        // Output a nonce for form security
+        wp_nonce_field('run_backup_action', 'run_backup_nonce');
+
+        echo '
+                <input type="hidden" name="run_backup" value="1">
+                <input type="submit" class="button button-primary" value="Backup Now">
+            </form>
+        </p>';
+
+        // Handle Backup Now button click
+        if (isset($_POST['run_backup'])) {
+            // Verify nonce for security
+            if (isset($_POST['run_backup_nonce']) && wp_verify_nonce($_POST['run_backup_nonce'], 'run_backup_action')) {
+                
+                // Define the FIFO file path
+                $fifo_file = '/var/www/meta/command_queue.fifo';
+
+                // Ensure the FIFO file exists and is writable
+                if (file_exists($fifo_file) && is_writable($fifo_file)) {
+                    // Check if the FIFO file is a named pipe
+                    if (posix_mkfifo($fifo_file, 0600) || filetype($fifo_file) == 'fifo') {
+                        // Command to run the remote backup
+                        $command = '/bin/bash /var/www/ss-remote-backup';
+
+                        // Open the FIFO file in write mode
+                        if ($fifo = fopen($fifo_file, 'w')) {
+                            // Write the command to the FIFO queue
+                            fwrite($fifo, $command . PHP_EOL);
+                            fclose($fifo);
+
+                            // Display success message
+                            echo '<div class="notice notice-success is-dismissible"><p>Backup command added to the queue. The backup process will start shortly.</p></div>';
+                        } else {
+                            echo '<div class="notice notice-error is-dismissible"><p>Failed to open FIFO file for writing.</p></div>';
+                        }
+                    } else {
+                        echo '<div class="notice notice-error is-dismissible"><p>The specified file is not a FIFO file.</p></div>';
+                    }
+                } else {
+                    echo '<div class="notice notice-error is-dismissible"><p>FIFO file is not writable or does not exist.</p></div>';
+                }
+
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Security check failed. Please try again.</p></div>';
+            }
+        }
+
+    } // end if
+
+    break;
 	
 	
 	case 'staging':
